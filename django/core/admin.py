@@ -16,7 +16,8 @@ class VideoAdmin(admin.ModelAdmin):
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
-			path('<int:id>/upload-video', self.upload_video, name='core_video_upload')
+			path('<int:id>/upload-video', self.upload_video, name='core_video_upload'),
+			path('<int:id>/upload-video/finish', self.finish_upload_video, name='core_video_upload_finish')
 		]
         return custom_urls + urls
 
@@ -41,7 +42,14 @@ class VideoAdmin(admin.ModelAdmin):
                 chunk=form.cleaned_data['chunk'].read()
 			)
 
-        return render(request, 'admin/core/upload_video.html')
+        context = dict(
+			id=id
+		)
+
+        return render(request, 'admin/core/upload_video.html', context)
+
+    def finish_upload_video(self, request, id):
+        pass
 
 # Register your models here.
 admin.site.register(Video, VideoAdmin)
