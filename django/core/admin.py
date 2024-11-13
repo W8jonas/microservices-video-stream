@@ -1,3 +1,4 @@
+import traceback
 from django.contrib import admin
 from django.contrib.auth.admin import csrf_protect_m
 from django.http import JsonResponse
@@ -5,9 +6,9 @@ from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils.html import format_html
 
-from core.forms import VideoChunkFinishUploadForm
+from core.forms import VideoChunkFinishUploadForm, VideoChunkUploadForm
 from core.models import Video, Tag
-from core.services import VideoService
+from core.services import VideoService, create_video_service_factory
 
 
 class VideoAdmin(admin.ModelAdmin):
@@ -16,8 +17,16 @@ class VideoAdmin(admin.ModelAdmin):
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
-			path('<int:id>/upload-video', self.upload_video, name='core_video_upload'),
-			path('<int:id>/upload-video/finish', self.finish_upload_video, name='core_video_upload_finish')
+			path(
+				'<int:id>/upload-video',
+				self.admin_site.admin_view(self.upload_video_view),
+				name='core_video_upload'
+			),
+			path(
+				'<int:id>/upload-video/finish',
+				self.admin_site.admin_view(self.finish_upload_video_view),
+				name='core_video_upload_finish'
+			)
 		]
         return custom_urls + urls
 
@@ -28,27 +37,51 @@ class VideoAdmin(admin.ModelAdmin):
     redirect_to_upload.short_description = 'upload'
 
     @csrf_protect_m
-    def upload_video(self, request, id):
+    def upload_video_view(self, request, id):
 
+        str_id = str(id)
+  
         if request.method == 'POST':
-            form = VideoChunkFinishUploadForm(request.POST, request.FILES)
+            return self._do_upload_video_chunks(request, id)
 
-            if not form.is_valid():
-                return JsonResponse({"error": form.errors}, status=400)
+        try:
+            video = create_video_service_factory().find_video(id)
 
-            VideoService().process_upload(
-				video_id=id,
-				chunk_index=form.cleaned_data['chunkIndex'],
-                chunk=form.cleaned_data['chunk'].read()
+            context = dict(
+				self.admin_site.each_context(request),
+				opts=self.model._meta,
+				id=id,
+				video=video,
+				video_media=video.video_media if hasattr(video, 'video_media') else None,
+				has_view_permission=True
+            )
+            return render(request, 'admin/core/upload_video.html', context)
+
+        except Video.DoesNotExist:
+            return self._get_obj_does_not_exist_redirect(
+				request, self.opts, str_id
 			)
 
-        context = dict(
-			id=id
-		)
+    def _do_upload_video_chunks(self, request: Httprequest, id: int) -> Any:
+        form = VideoChunkUploadForm(request.POST, request.FILES)
 
-        return render(request, 'admin/core/upload_video.html', context)
+        if not form.is_valid():
+            return JsonResponse({"error": form.errors}, status=400)
 
-    def finish_upload_video(self, request, id):
+        try:
+            create_video_service_factory().process_upload(
+                video_id=id,
+                chunk_index=form.cleaned_data['chunkIndex'],
+                chunk=form.cleaned_data['chunk'].read()
+            )
+        except Video.DoesNotExist:
+            return JsonResponse({"error": "Vídeo não encontrado"}, status=404)
+        except Exception as e:
+            traceback.print_exc()
+            return JsonResponse({"error": str(e)}, status=500)
+
+
+    def finish_upload_video_view(self, request, id):
         pass
 
 # Register your models here.
