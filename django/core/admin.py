@@ -1,14 +1,15 @@
 import traceback
-from django.contrib import admin
+from typing import Any
+from django.contrib import admin, messages
 from django.contrib.auth.admin import csrf_protect_m
-from django.http import JsonResponse
+from django.http import HttpRequest, JsonResponse
 from django.shortcuts import render
 from django.urls import path, reverse
 from django.utils.html import format_html
 
 from core.forms import VideoChunkFinishUploadForm, VideoChunkUploadForm
 from core.models import Video, Tag
-from core.services import VideoService, create_video_service_factory
+from core.services import VideoChunkUploadException, VideoMediaInvalidStatusException, VideoMediaNotExistsException, create_video_service_factory
 
 
 class VideoAdmin(admin.ModelAdmin):
@@ -62,7 +63,7 @@ class VideoAdmin(admin.ModelAdmin):
 				request, self.opts, str_id
 			)
 
-    def _do_upload_video_chunks(self, request: Httprequest, id: int) -> Any:
+    def _do_upload_video_chunks(self, request: HttpRequest, id: int) -> Any:
         form = VideoChunkUploadForm(request.POST, request.FILES)
 
         if not form.is_valid():
@@ -82,7 +83,24 @@ class VideoAdmin(admin.ModelAdmin):
 
 
     def finish_upload_video_view(self, request, id):
-        pass
+        if request.method != 'POST':
+            return JsonResponse({'error': 'Método não permitido.'}, status=405)
+
+        form = VideoChunkFinishUploadForm(request.POST)
+
+        if not form.is_valid():
+            return JsonResponse({'error': form.errors}, status=400)
+
+        try:
+            create_video_service_factory().finalize_upload(id, form.cleaned_data['totalChunks'])
+        except Video.DoesNotExist:
+            return JsonResponse({'error': 'Vídeo não encontrado.'}, status=404)
+        except (VideoMediaNotExistsException, VideoMediaInvalidStatusException, VideoChunkUploadException) as e:
+            return JsonResponse({'error': str(e)}, status=400)
+
+        self.message_user(request, 'Upload realizado com sucesso.', messages.SUCCESS)
+
+        return JsonResponse({}, status=204)
 
 # Register your models here.
 admin.site.register(Video, VideoAdmin)
