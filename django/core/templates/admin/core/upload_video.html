@@ -1,5 +1,9 @@
 {% extends "admin/base_site.html" %}
 
+{% load i18n admin_urls static %}
+
+{% block extrastyle %}{{ block.super }}<link rel="stylesheet" href="{% static "admin/css/forms.css" %}">{% endblock %}
+
 {% block content %}
 <form id="upload-form" method="post" enctype="multipart/form-data">
   <p id="errornote" class="errornote hidden"></p>
