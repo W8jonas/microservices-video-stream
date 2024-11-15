@@ -93,7 +93,7 @@ class VideoAdmin(admin.ModelAdmin):
         except Exception as e:
             traceback.print_exc()
             return JsonResponse({"error": str(e)}, status=500)
-
+        return JsonResponse({}, status=204)
 
     def finish_upload_video_view(self, request, id):
         if request.method != 'POST':
