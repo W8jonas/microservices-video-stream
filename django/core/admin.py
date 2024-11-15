@@ -15,6 +15,14 @@ from core.services import VideoChunkUploadException, VideoMediaInvalidStatusExce
 class VideoAdmin(admin.ModelAdmin):
     list_display = ('title', 'published_at', 'is_published', 'num_likes', 'num_views', 'redirect_to_upload',)
 
+    def get_readonly_fields(self, request: HttpRequest, obj: Any | None) -> list[str]:
+        return ['video_status','is_published', 'published_at', 'num_likes', 'num_views', 'author'] if not obj else [
+            'video_status','published_at', 'num_likes', 'num_views', 'author'
+        ]
+
+    def video_status(self, obj: Video) -> str:
+        return obj.get_video_status_display()
+
     def get_urls(self):
         urls = super().get_urls()
         custom_urls = [
@@ -30,6 +38,11 @@ class VideoAdmin(admin.ModelAdmin):
 			)
 		]
         return custom_urls + urls
+
+    def save_model(self, request, obj, form, change):
+        if not obj.pk:
+            obj.author = request.user
+        super().save_model(request, obj, form, change)
 
     def redirect_to_upload(self, obj: Video):
         url = reverse('admin:core_video_upload', args=[obj.id])
