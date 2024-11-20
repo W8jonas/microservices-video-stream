@@ -16,6 +16,10 @@ import (
 type VideoConverter struct {
 }
 
+func NewVideoConverter() *VideoConverter {
+	return &VideoConverter{}
+}
+
 type VideoTask struct {
 	VideoId int    `json:"video_id"`
 	Path    string `json:"path"`
@@ -25,7 +29,14 @@ func (vc *VideoConverter) Handle(msg []byte) {
 	var task VideoTask
 	err := json.Unmarshal(msg, &task)
 	if err != nil {
-		vc.logError(task, "Failed to unmarshal task", err)
+		vc.logError(task, "failed to unmarshal task", err)
+		return
+	}
+
+	err = vc.processVideo(&task)
+	if err != nil {
+		vc.logError(task, "failed to process video", err)
+		return
 	}
 }
 
@@ -36,32 +47,34 @@ func (vc *VideoConverter) processVideo(task *VideoTask) error {
 	slog.Info("Merging chunks", slog.String("path", task.Path))
 	err := vc.mergeChunks(task.Path, mergedFile)
 	if err != nil {
-		vc.logError(*task, "Failed to merge chunks", err)
+		vc.logError(*task, "failed to merge chunks", err)
 		return err
 	}
 
 	slog.Info("Creating mpeg-dash directory", slog.String("path", task.Path))
 	err = os.MkdirAll(mpegDashPath, os.ModePerm)
 	if err != nil {
-		vc.logError(*task, "Failed to create mpeg-dash directory", err)
+		vc.logError(*task, "failed to create mpeg-dash directory", err)
 		return err
 	}
 
 	slog.Info("Merging chunks", slog.String("path", task.Path))
 	ffmpegCmd := exec.Command(
-		"ffmpeg", "-i", mergedFile, "-f", "dash", filepath.Join(mpegDashPath, "output.mpd"),
+		"ffmpeg", "-i", mergedFile,
+		"-f", "dash",
+		filepath.Join(mpegDashPath, "output.mpd"),
 	)
 
-	output, err := ffmpegCmd.CombineOutput()
+	output, err := ffmpegCmd.CombinedOutput()
 	if err != nil {
-		vc.logError(*task, "Failed to convert video to mpeg-dash, output: "+string(output), err)
+		vc.logError(*task, "failed to convert video to mpeg-dash, output: "+string(output), err)
 		return err
 	}
 	slog.Info("Video converted to mpeg-dash", slog.String("path", mpegDashPath))
 
 	err = os.Remove(mergedFile)
 	if err != nil {
-		vc.logError(*task, "Failed to remove merge file", err)
+		vc.logError(*task, "failed to remove merge file", err)
 		return err
 	}
 
@@ -91,9 +104,11 @@ func (vc *VideoConverter) extractNumber(fileName string) int {
 }
 
 func (vc *VideoConverter) mergeChunks(inputDir, outputFile string) error {
+	slog.Info("mergeChunks", inputDir, outputFile)
+
 	chunks, err := filepath.Glob(filepath.Join(inputDir, "*.chunk"))
 	if err != nil {
-		return fmt.Errorf("Failed to find chunks: %v", err)
+		return fmt.Errorf("failed to find chunks: %v", err)
 	}
 
 	sort.Slice(chunks, func(i, j int) bool {
@@ -102,19 +117,19 @@ func (vc *VideoConverter) mergeChunks(inputDir, outputFile string) error {
 
 	output, err := os.Create(outputFile)
 	if err != nil {
-		return fmt.Errorf("Failed to create output file: %v", err)
+		return fmt.Errorf("failed to create merged file: %w", err)
 	}
 	defer output.Close()
 
 	for _, chunk := range chunks {
 		input, err := os.Open(chunk)
 		if err != nil {
-			return fmt.Errorf("Failed to open chunk: %v", err)
+			return fmt.Errorf("failed to open chunk: %v", err)
 		}
 
 		_, err = output.ReadFrom(input)
 		if err != nil {
-			return fmt.Errorf("Failed to write chunk %s to merged file: %v", chunk, err)
+			return fmt.Errorf("failed to write chunk %s to merged file: %v", chunk, err)
 		}
 		input.Close()
 	}
