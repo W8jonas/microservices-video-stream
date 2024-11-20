@@ -2,14 +2,15 @@ package converter
 
 import (
 	"encoding/json"
-	"log/slog"
-	"time"
 	"fmt"
+	"log/slog"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"regexp"
 	"sort"
 	"strconv"
+	"time"
 )
 
 type VideoConverter struct {
@@ -28,7 +29,7 @@ func (vc *VideoConverter) Handle(msg []byte) {
 	}
 }
 
-func (vc *VideoConverter) processVideo(task VideoTask) error {
+func (vc *VideoConverter) processVideo(task *VideoTask) error {
 	mergedFile := filepath.Join(task.Path, "merged.mp4")
 	mpegDashPath := filepath.Join(task.Path, "mpeg-dash")
 
@@ -36,9 +37,35 @@ func (vc *VideoConverter) processVideo(task VideoTask) error {
 	err := vc.mergeChunks(task.Path, mergedFile)
 	if err != nil {
 		vc.logError(*task, "Failed to merge chunks", err)
-		return fmt.Errorf("Failed to merge chunks: %v", err)
+		return err
 	}
 
+	slog.Info("Creating mpeg-dash directory", slog.String("path", task.Path))
+	err = os.MkdirAll(mpegDashPath, os.ModePerm)
+	if err != nil {
+		vc.logError(*task, "Failed to create mpeg-dash directory", err)
+		return err
+	}
+
+	slog.Info("Merging chunks", slog.String("path", task.Path))
+	ffmpegCmd := exec.Command(
+		"ffmpeg", "-i", mergedFile, "-f", "dash", filepath.Join(mpegDashPath, "output.mpd"),
+	)
+
+	output, err := ffmpegCmd.CombineOutput()
+	if err != nil {
+		vc.logError(*task, "Failed to convert video to mpeg-dash, output: "+string(output), err)
+		return err
+	}
+	slog.Info("Video converted to mpeg-dash", slog.String("path", mpegDashPath))
+
+	err = os.Remove(mergedFile)
+	if err != nil {
+		vc.logError(*task, "Failed to remove merge file", err)
+		return err
+	}
+
+	return nil
 }
 
 func (vc *VideoConverter) logError(task VideoTask, message string, err error) {
@@ -50,7 +77,7 @@ func (vc *VideoConverter) logError(task VideoTask, message string, err error) {
 	}
 	serializedError, _ := json.Marshal(errorData)
 
-	slog.Error("Processing error: ", slog.String("error_details", string(serializedError))
+	slog.Error("Processing error: ", slog.String("error_details", string(serializedError)))
 }
 
 func (vc *VideoConverter) extractNumber(fileName string) int {
