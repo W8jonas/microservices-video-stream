@@ -2,7 +2,7 @@ services:
   go_app_dev:
     build:
       context: .
-      dockerfile: Dockerfile
+      dockerfile: dockerfile
     volumes:
       - .:/app
       - external-storage:/media/uploads

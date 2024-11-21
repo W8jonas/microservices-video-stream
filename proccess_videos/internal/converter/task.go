@@ -104,7 +104,7 @@ func (vc *VideoConverter) extractNumber(fileName string) int {
 }
 
 func (vc *VideoConverter) mergeChunks(inputDir, outputFile string) error {
-	slog.Info("mergeChunks", inputDir, outputFile)
+	slog.Info("mergeChunks:", inputDir, outputFile)
 
 	chunks, err := filepath.Glob(filepath.Join(inputDir, "*.chunk"))
 	if err != nil {
